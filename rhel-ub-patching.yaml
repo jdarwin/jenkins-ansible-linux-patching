@@ -1,0 +1,78 @@
+---
+# Ansible playbook 
+# automated patching of redhat and ubuntu servers 
+- hosts: all
+  become: yes
+  serial: 5
+
+  tasks:
+    - name: check if we or db process running, you can customize per you process names here 
+      shell: if ps -eaf | egrep 'oracle|mysql|http|apache'|grep -v grep > /dev/null ;then echo 'found_processes';else echo 'process_not_running';fi
+      ignore_errors: true
+      register: app_process_check
+
+    - name: check if patching should be started.
+      fail: msg="{{ inventory_hostname }} Running proccesses found, check and stop them before proceeding with patching."
+      when: app_process_check.stdout == "found_processes"
+
+    - name: Proceed with upgrading kernel on redhat or centos servers 
+      yum: name="kernel"
+        state=latest
+      when: app_process_check.stdout == "process_not_running" and ansible_distribution == 'Red Hat Enterprise Linux' or ansible_distribution == 'CentOS'
+      register: yum_update
+
+    - name: Proceed with upgrading kernel on ubuntu servers
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+        name: linux-image-generic
+        state: latest
+      when: app_process_check.stdout == "process_not_running" and ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
+      register: apt_update
+
+    - name: Post kernel upgrade on red hat or centos servers, check if reboot is required 
+      shell: KERNEL_NEW=$(rpm -q --last kernel |head -1 | awk '{print $1}' | sed 's/kernel-//'); KERNEL_NOW=$(uname -r); if [[ $KERNEL_NEW != $KERNEL_NOW ]]; then echo "reboot_needed"; else echo "reboot_not_needed"; fi
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      ignore_errors: true
+      register: reboot_required
+
+    - name: Post kernel upgrade on ubuntu servers, check if reboot is required 
+      register: reboot_required_file
+      stat: path=/var/run/reboot-required
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
+
+    - name: If kernel was upgraded then reboot red hat or centos servers 
+      command: shutdown -r +1  "Rebooting..."
+      async: 0
+      poll: 0
+      when: reboot_required.stdout == "reboot_needed" and (ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux')
+      register: reboot_started
+      ignore_errors: true
+
+    - name: If kernel was upgraded then reboot ubuntu servers 
+      reboot:
+        msg: "Rebooting..."
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: uptime
+      when: reboot_required_file.stat.exists and (ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian')
+      register: reboot_started_ubuntu
+      ignore_errors: true
+
+    - name: wait for 3 minutes for user input
+      pause:
+        minutes: 2
+
+    - name: ensure ssh is working for all servers 
+      local_action:
+        module: wait_for
+          host={{ (ansible_ssh_host|default(ansible_host))|default(inventory_hostname) }}
+          port=22
+          search_regex=OpenSSH
+          delay=15
+          timeout=300
+          state=started
+

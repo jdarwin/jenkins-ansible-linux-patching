@@ -1,0 +1,20 @@
+---
+- name: check if myfile.txt exists
+  hosts: all
+  become: yes 
+  tasks:
+    - name: Get stats about myfile.txt
+      stat:
+        path: /etc
+      register: myvar
+    - debug:
+        msg: "The contents of myvar: {{ myvar }}"
+    - debug:
+        msg: "The file myfile.txt exists!"
+      when: myvar.stat.exists
+    - debug:
+        msg: "The file myfile.txt does not exists"
+      when: myvar.stat.exists == False
+    - debug:
+        msg: "myfile.txt is a directory!"
+      when: myvar.stat.isdir is defined and myvar.stat.isdir      
