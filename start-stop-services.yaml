@@ -4,10 +4,10 @@
   become: true
   vars:
     disable_services:
-      - "httpd.service"    
-    enable_services:
       - "chronyd.service"
-      - "tomcat.service"
+      - "tomcat.service"    
+    enable_services:
+      - "httpd.service"    
   tasks:
     - name: service facts
       ansible.builtin.service_facts:
