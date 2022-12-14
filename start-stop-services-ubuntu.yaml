@@ -1,0 +1,29 @@
+---
+- name: Start and stop Ubuntu Linux services
+  hosts: all
+  become: true
+  vars:
+    disable_services:
+      - "chronyd"
+    enable_services:
+      - "ntp"    
+  tasks:
+    - name: service facts
+      ansible.builtin.service_facts:
+
+    - name: disable the services you want 
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      when: "item in services"
+      with_items: "{{ disable_services }}"
+
+    - name: enable the services you want 
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      when: "item in services"
+      with_items: "{{ enable_services }}"
+
